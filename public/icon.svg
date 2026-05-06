@@ -1,0 +1,41 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark navy background with rounded corners -->
+  <rect width="512" height="512" rx="100" fill="#0a1628"/>
+  
+  <!-- Left green candlestick (bullish) -->
+  <g>
+    <!-- Upper wick -->
+    <rect x="95" y="180" width="8" height="50" fill="#22c55e"/>
+    <!-- Body -->
+    <rect x="75" y="230" width="48" height="100" rx="6" fill="#22c55e"/>
+    <!-- Lower wick -->
+    <rect x="95" y="330" width="8" height="40" fill="#22c55e"/>
+  </g>
+  
+  <!-- White T letter with curved tail -->
+  <path d="M150 120 H350 Q365 120 365 135 V160 Q365 175 350 175 H290 V175 Q290 280 220 360 L200 385 Q185 405 165 405 H160 Q145 405 145 390 V380 Q145 365 160 350 L180 325 Q235 260 235 175 H165 Q150 175 150 160 V135 Q150 120 165 120 Z" fill="white"/>
+  
+  <!-- Red candlestick (bearish) - positioned behind/around the T -->
+  <g>
+    <!-- Upper wick -->
+    <rect x="308" y="85" width="10" height="40" fill="#ef4444"/>
+    <!-- Upper body -->
+    <rect x="285" y="125" width="56" height="50" rx="8" fill="#ef4444"/>
+    <!-- Middle wick -->
+    <rect x="308" y="175" width="10" height="120" fill="#ef4444"/>
+    <!-- Lower body -->
+    <rect x="285" y="295" width="56" height="70" rx="8" fill="#ef4444"/>
+    <!-- Lower wick -->
+    <rect x="308" y="365" width="10" height="45" fill="#ef4444"/>
+  </g>
+  
+  <!-- Right green candlestick (bullish) -->
+  <g>
+    <!-- Upper wick -->
+    <rect x="400" y="130" width="10" height="50" fill="#22c55e"/>
+    <!-- Body -->
+    <rect x="377" y="180" width="56" height="130" rx="8" fill="#22c55e"/>
+    <!-- Lower wick -->
+    <rect x="400" y="310" width="10" height="60" fill="#22c55e"/>
+  </g>
+</svg>
