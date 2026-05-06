@@ -13,8 +13,8 @@ import { requestNotificationPermission, startNotificationScheduler, registerPeri
 import DeoMascot from "@/components/deo-mascot"
 import { createClient } from "@/lib/supabase/client"
 
-// Logical step order: language -> email -> verify code -> username -> password -> rest of onboarding
-const STEPS = ["language", "email", "email-verify", "username", "password", "source", "daily-time", "goals", "level", "notifications", "summary", "success"] as const
+// Logical step order: language -> email -> username -> password -> rest of onboarding (no OTP verification needed)
+const STEPS = ["language", "email", "username", "password", "source", "daily-time", "goals", "level", "notifications", "summary", "success"] as const
 type Step = (typeof STEPS)[number]
 
 const SOURCE_IDS = ["tiktok", "friends", "store", "news", "social", "tv", "linkedin"] as const
@@ -165,8 +165,8 @@ export default function OnboardingPage() {
     return pwd.length >= 6
   }
 
-  // Step 1: Send verification code to email using Supabase client directly
-  const handleSendCode = async () => {
+  // Step 1: Validate email and proceed (no OTP - we'll create account at the end)
+  const handleEmailNext = async () => {
     haptics.tap()
     setEmailError("")
     
@@ -175,109 +175,35 @@ export default function OnboardingPage() {
       return
     }
 
+    // Check if email is already in use
     setSendingCode(true)
-
     try {
       const supabase = createClient()
+      const { data } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("email", email.toLowerCase())
+        .maybeSingle()
       
-      // Use Supabase signInWithOtp directly from client
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.toLowerCase(),
-        options: {
-          shouldCreateUser: true,
-        },
-      })
-
-      if (error) {
-        if (error.message.includes("rate limit")) {
-          setEmailError(language === "fr" ? "Trop de tentatives. Attends quelques minutes." : "Too many attempts. Wait a few minutes.")
-        } else {
-          setEmailError(error.message)
-        }
+      if (data) {
+        setEmailError(language === "fr" ? "Cet email est deja utilise. Connecte-toi." : "This email is already in use. Please log in.")
         haptics.error()
-      } else {
-        haptics.success()
-        handleNext()
+        setSendingCode(false)
+        return
       }
+      
+      haptics.success()
+      handleNext()
     } catch {
-      setEmailError(language === "fr" ? "Erreur de connexion" : "Connection error")
-      haptics.error()
+      // If check fails, proceed anyway - we'll catch duplicates at signup
+      haptics.success()
+      handleNext()
     } finally {
       setSendingCode(false)
     }
   }
 
-  // Resend verification code
-  const handleResendCode = async () => {
-    haptics.tap()
-    setResendingCode(true)
-    setCodeError("")
-
-    try {
-      const supabase = createClient()
-      
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.toLowerCase(),
-        options: {
-          shouldCreateUser: true,
-        },
-      })
-
-      if (!error) {
-        haptics.success()
-      } else {
-        setCodeError(language === "fr" ? "Erreur lors du renvoi" : "Error resending code")
-        haptics.error()
-      }
-    } catch {
-      setCodeError(language === "fr" ? "Erreur lors du renvoi" : "Error resending code")
-      haptics.error()
-    } finally {
-      setResendingCode(false)
-    }
-  }
-
-  // Step 2: Verify the code using Supabase client directly
-  const handleVerifyCode = async () => {
-    haptics.tap()
-    setVerifyingCode(true)
-    setCodeError("")
-
-    try {
-      const supabase = createClient()
-      
-      // Verify OTP with Supabase - use same client that sent the OTP
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: email.toLowerCase(),
-        token: emailCode,
-        type: "email",
-      })
-
-      if (error) {
-        if (error.message.includes("expired")) {
-          setCodeError(language === "fr" ? "Code expire. Demande un nouveau code." : "Code expired. Request a new code.")
-        } else {
-          setCodeError(language === "fr" ? "Code incorrect" : "Incorrect code")
-        }
-        haptics.error()
-      } else if (data.user) {
-        setEmailVerified(true)
-        setSupabaseUserId(data.user.id)
-        haptics.success()
-        handleNext()
-      } else {
-        setCodeError(t.codeIncorrect)
-        haptics.error()
-      }
-    } catch {
-      setCodeError(language === "fr" ? "Erreur de verification" : "Verification error")
-      haptics.error()
-    } finally {
-      setVerifyingCode(false)
-    }
-  }
-
-  // Step 3: Save username
+  // Step 2: Save username
   const handleSaveUsername = async () => {
     haptics.tap()
     setUsernameError("")
@@ -318,9 +244,7 @@ export default function OnboardingPage() {
     }
   }
 
-  // Step 4: Create account with password
-  // After OTP verification, user is already authenticated via signInWithOtp
-  // We just need to update their password
+  // Step 3: Create account with email/password directly
   const handleCreateAccount = async () => {
     haptics.tap()
     setPasswordError("")
@@ -340,68 +264,31 @@ export default function OnboardingPage() {
     try {
       const supabase = createClient()
       
-      // User is already authenticated via OTP, so update password instead of signup
-      const { data: userData, error: updateError } = await supabase.auth.updateUser({
-        password: password,
-        data: {
-          username: username,
-          display_name: username,
+      // Sign up with email and password
+      const { data: signupData, error: signupError } = await supabase.auth.signUp({
+        email: email.toLowerCase(),
+        password,
+        options: {
+          data: {
+            username: username,
+            display_name: username,
+          },
         },
       })
-
-      if (updateError) {
-        console.error("[v0] Update user error:", updateError)
-        // If update fails, try signup as fallback (for cases where OTP didn't create session)
-        const { data: signupData, error: signupError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/learn`,
-            data: {
-              username: username,
-              display_name: username,
-            },
-          },
-        })
-        
-        if (signupError) {
-          if (signupError.message.includes("already registered")) {
-            // User exists, try to sign in instead
-            const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-              email,
-              password,
-            })
-            
-            if (loginError) {
-              setPasswordError(language === "fr" ? "Erreur de connexion. Essaie de te connecter." : "Login error. Try logging in.")
-              haptics.error()
-              setIsCreatingAccount(false)
-              return
-            }
-            
-            if (loginData.user) {
-              setSupabaseUserId(loginData.user.id)
-              haptics.success()
-              handleNext()
-              return
-            }
-          }
+      
+      if (signupError) {
+        if (signupError.message.includes("already registered")) {
+          setPasswordError(language === "fr" ? "Cet email est deja utilise. Connecte-toi." : "This email is already registered. Please log in.")
+        } else {
           setPasswordError(signupError.message)
-          haptics.error()
-          setIsCreatingAccount(false)
-          return
         }
-        
-        if (signupData?.user) {
-          setSupabaseUserId(signupData.user.id)
-          haptics.success()
-          handleNext()
-          return
-        }
+        haptics.error()
+        setIsCreatingAccount(false)
+        return
       }
-
-      if (userData?.user) {
-        setSupabaseUserId(userData.user.id)
+      
+      if (signupData?.user) {
+        setSupabaseUserId(signupData.user.id)
         haptics.success()
         handleNext()
       }
@@ -673,108 +560,19 @@ export default function OnboardingPage() {
               </div>
               <Button
                 size="lg"
-                onClick={handleSendCode}
+                onClick={handleEmailNext}
                 disabled={!validateEmail(email) || sendingCode}
                 className="w-full h-14 text-lg font-bold rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-90"
               >
                 {sendingCode ? (
                   <span className="flex items-center gap-2">
                     <RefreshCw className="h-5 w-5 animate-spin" />
-                    {t.sending}
+                    {language === "fr" ? "Verification..." : "Checking..."}
                   </span>
                 ) : (
-                  t.sendCode
+                  t.next
                 )}
               </Button>
-            </div>
-          )}
-
-          {/* Email verification */}
-          {currentStep === "email-verify" && (
-            <div className="space-y-6 text-center">
-              <div className="flex justify-center">
-                {renderMascot("neutral", 140)}
-              </div>
-              <div className="space-y-2">
-                <h1 className="text-2xl font-bold text-white">{t.enterCode}</h1>
-                <p className="text-sm text-gray-400">{t.codeSentTo}</p>
-                <p className="text-purple-400 font-medium">{email}</p>
-                {/* Show test code when email service is not configured */}
-                {testCode && (
-                  <div className="mt-4 p-3 bg-green-500/20 border border-green-500/30 rounded-lg">
-                    <p className="text-xs text-green-400 mb-1">
-                      {language === "fr" ? "Mode test - Ton code:" : "Test mode - Your code:"}
-                    </p>
-                    <p className="text-2xl font-bold text-green-400 tracking-widest">{testCode}</p>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-4">
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="000000"
-                  maxLength={6}
-                  value={emailCode}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '')
-                    if (val.length <= 6) {
-                      setEmailCode(val)
-                      setCodeError("")
-                    }
-                  }}
-                  className="h-16 text-3xl text-center tracking-[0.5em] bg-slate-800 border-purple-400/30 text-white placeholder:text-gray-600 font-mono"
-                  autoFocus
-                />
-                {codeError && (
-                  <div className="flex items-center justify-center gap-2 text-red-400 text-sm">
-                    <AlertCircle className="h-4 w-4 shrink-0" />
-                    {codeError}
-                  </div>
-                )}
-              </div>
-              <Button
-                size="lg"
-                onClick={handleVerifyCode}
-                disabled={emailCode.length !== 6 || verifyingCode}
-                className="w-full h-14 text-lg font-bold rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-90"
-              >
-                {verifyingCode ? (
-                  <span className="flex items-center gap-2">
-                    <RefreshCw className="h-5 w-5 animate-spin" />
-                    {t.verifying}
-                  </span>
-                ) : (
-                  t.verify
-                )}
-              </Button>
-              <div className="flex items-center justify-center gap-4">
-                <button
-                  onClick={handleResendCode}
-                  disabled={resendingCode}
-                  className="text-sm text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1"
-                >
-                  {resendingCode ? (
-                    <>
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                      {language === "fr" ? "Renvoi..." : "Resending..."}
-                    </>
-                  ) : (
-                    language === "fr" ? "Renvoyer le code" : "Resend code"
-                  )}
-                </button>
-                <span className="text-gray-600">|</span>
-                <button
-                  onClick={() => {
-                    setEmailCode("")
-                    setCodeError("")
-                    setCurrentStep("email")
-                  }}
-                  className="text-sm text-gray-400 hover:text-white transition-colors"
-                >
-                  {t.changeEmail}
-                </button>
-              </div>
             </div>
           )}
 

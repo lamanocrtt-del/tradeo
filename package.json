@@ -8,7 +8,7 @@
     "build:mobile": "next build && npx cap sync android",
     "cap:open": "npx cap open android",
     "dev": "next dev",
-    "lint": "next lint",
+    "lint": "eslint .",
     "start": "next start"
   },
   "dependencies": {
