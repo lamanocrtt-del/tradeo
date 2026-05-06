@@ -12,6 +12,7 @@ import { useI18n, useTranslation, type Language } from "@/lib/i18n"
 import { requestNotificationPermission, startNotificationScheduler, registerPeriodicSync, sendWelcomeNotification, sendAccountCreatedNotification } from "@/lib/notifications"
 import DeoMascot from "@/components/deo-mascot"
 import { createClient } from "@/lib/supabase/client"
+import { signUpWithEmail } from "@/app/actions/auth"
 
 // Logical step order: language -> email -> username -> password -> rest of onboarding (no OTP verification needed)
 const STEPS = ["language", "email", "username", "password", "source", "daily-time", "goals", "level", "notifications", "summary", "success"] as const
@@ -244,7 +245,7 @@ export default function OnboardingPage() {
     }
   }
 
-  // Step 3: Create account with email/password directly
+  // Step 3: Create account with email/password via Server Action
   const handleCreateAccount = async () => {
     haptics.tap()
     setPasswordError("")
@@ -262,33 +263,22 @@ export default function OnboardingPage() {
     setIsCreatingAccount(true)
 
     try {
-      const supabase = createClient()
+      // Use Server Action for signup (more reliable than client-side)
+      const result = await signUpWithEmail(email, password, username)
       
-      // Sign up with email and password
-      const { data: signupData, error: signupError } = await supabase.auth.signUp({
-        email: email.toLowerCase(),
-        password,
-        options: {
-          data: {
-            username: username,
-            display_name: username,
-          },
-        },
-      })
-      
-      if (signupError) {
-        if (signupError.message.includes("already registered")) {
+      if (!result.success) {
+        if (result.error === "EMAIL_EXISTS") {
           setPasswordError(language === "fr" ? "Cet email est deja utilise. Connecte-toi." : "This email is already registered. Please log in.")
         } else {
-          setPasswordError(signupError.message)
+          setPasswordError(result.error || (language === "fr" ? "Erreur lors de la creation du compte" : "Error creating account"))
         }
         haptics.error()
         setIsCreatingAccount(false)
         return
       }
       
-      if (signupData?.user) {
-        setSupabaseUserId(signupData.user.id)
+      if (result.userId) {
+        setSupabaseUserId(result.userId)
         haptics.success()
         handleNext()
       }
